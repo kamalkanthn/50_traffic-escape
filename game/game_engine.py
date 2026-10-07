@@ -2,6 +2,7 @@ import pygame
 import random
 from game.player import Player,LANE_W
 from game.traffic import Car,make_car
+from game.river import River,RIVER_TOP,RIVER_H
 
 LANES=8
 WIDTH=LANES*LANE_W
@@ -26,6 +27,7 @@ class GameEngine:
         self.player=Player(*self.start_pos)
         self.lives=START_LIVES
         self.invuln=0
+        self.river=River(WIDTH)
         self.cars=[]
         self.timer=0
         self.spawn_interval=50
@@ -54,13 +56,34 @@ class GameEngine:
         for c in self.cars:
             c.update()
         # at most ONE life is lost per frame, and none while invulnerable
-        if self.invuln==0 and any(c.rect.colliderect(self.player.rect) for c in self.cars):
+        if self.invuln==0 and any(self.car_hits_player(c) for c in self.cars):
             self.lose_life()
+        self.update_river()
         self.cars=[c for c in self.cars if not c.off_screen(HEIGHT)]
         self.score+=1
         if self.score%300==0: self.speed=min(10,self.speed+0.5)
         if self.player.rect.top<=10:
             self.won=True
+
+    def car_hits_player(self,c):
+        # cars run underneath the river, so overlap that lies inside the river band doesn't count
+        if not c.rect.colliderect(self.player.rect): return False
+        o=c.rect.clip(self.player.rect)
+        return o.top<RIVER_TOP or o.bottom>RIVER_TOP+RIVER_H
+
+    def update_river(self):
+        if self.game_over: return
+        # the log the player is standing on (looked up before the logs move this frame)
+        log=self.river.log_at(self.player.rect.center)
+        self.river.update()
+        if log:
+            # ride the log, but never leave the screen sideways
+            r=self.player.rect
+            r.x=max(0,min(WIDTH-r.width,r.x+log.speed))
+        # over the water with no log underneath -> fell in (costs a life, no invulnerability exemption)
+        centre=self.player.rect.center
+        if self.river.contains(centre) and not self.river.log_at(centre):
+            self.lose_life()
 
     def lose_life(self):
         self.lives-=1
@@ -83,6 +106,7 @@ class GameEngine:
         pygame.draw.rect(self.screen,(150,130,110),pygame.Rect(0,HEIGHT-50,WIDTH,50))
         pygame.draw.rect(self.screen,(150,130,110),pygame.Rect(0,0,WIDTH,30))
         for c in self.cars: c.draw(self.screen)
+        self.river.draw(self.screen)  # drawn over the cars: they pass underneath it
         # blink the player while invulnerable after a hit
         if self.invuln==0 or (self.invuln//6)%2==0:
             self.player.draw(self.screen)
