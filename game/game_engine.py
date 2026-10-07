@@ -8,6 +8,8 @@ WIDTH=LANES*LANE_W
 HEIGHT=600
 FPS=60
 BG=(60,60,60)
+START_LIVES=3
+INVULN_FRAMES=90  # ~1.5s of protection after being hit
 
 class GameEngine:
     def __init__(self):
@@ -20,7 +22,10 @@ class GameEngine:
         self.reset()
 
     def reset(self):
-        self.player=Player(WIDTH//2,HEIGHT-80)
+        self.start_pos=(WIDTH//2,HEIGHT-80)
+        self.player=Player(*self.start_pos)
+        self.lives=START_LIVES
+        self.invuln=0
         self.cars=[]
         self.timer=0
         self.spawn_interval=50
@@ -45,15 +50,26 @@ class GameEngine:
             self.cars.append(make_car(lane,HEIGHT,self.speed))
             self.timer=0
             self.spawn_interval=max(22,self.spawn_interval-0.2)
+        if self.invuln>0: self.invuln-=1
         for c in self.cars:
             c.update()
-            if c.rect.colliderect(self.player.rect):
-                self.game_over=True
+        # at most ONE life is lost per frame, and none while invulnerable
+        if self.invuln==0 and any(c.rect.colliderect(self.player.rect) for c in self.cars):
+            self.lose_life()
         self.cars=[c for c in self.cars if not c.off_screen(HEIGHT)]
         self.score+=1
         if self.score%300==0: self.speed=min(10,self.speed+0.5)
         if self.player.rect.top<=10:
             self.won=True
+
+    def lose_life(self):
+        self.lives-=1
+        if self.lives<=0:
+            self.lives=0
+            self.game_over=True
+        else:
+            self.player.respawn(*self.start_pos)
+            self.invuln=INVULN_FRAMES
 
     def draw(self):
         self.screen.fill(BG)
@@ -67,11 +83,15 @@ class GameEngine:
         pygame.draw.rect(self.screen,(150,130,110),pygame.Rect(0,HEIGHT-50,WIDTH,50))
         pygame.draw.rect(self.screen,(150,130,110),pygame.Rect(0,0,WIDTH,30))
         for c in self.cars: c.draw(self.screen)
-        self.player.draw(self.screen)
+        # blink the player while invulnerable after a hit
+        if self.invuln==0 or (self.invuln//6)%2==0:
+            self.player.draw(self.screen)
         hud=pygame.Rect(0,0,WIDTH,30)
         pygame.draw.rect(self.screen,(20,20,20),hud)
-        s=self.font.render(f"Score: {self.score//10}  GOAL: reach the top!  R=Restart",True,(220,220,220))
+        s=self.font.render(f"Score: {self.score//10}  GOAL: top!  R=Restart",True,(220,220,220))
         self.screen.blit(s,(6,4))
+        lv=self.font.render(f"Lives: {self.lives}",True,(255,90,90))
+        self.screen.blit(lv,(WIDTH-lv.get_width()-6,4))
         if self.game_over:
             self._msg("CRASHED!",(220,60,60))
         if self.won:

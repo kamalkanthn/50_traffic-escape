@@ -23,6 +23,11 @@ class Player:
         if dx: self.rect.x=nx; self.move_cooldown=12
         if dy: self.rect.y=ny
 
+    def respawn(self,x,y):
+        # put the player back at the start position (same centre as in __init__)
+        self.rect.center=(x,y)
+        self.move_cooldown=0
+
     def draw(self,screen):
         # car body
         pygame.draw.rect(screen,self.color,self.rect,border_radius=8)
