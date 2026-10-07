@@ -4,6 +4,7 @@ from game.player import Player,LANE_W
 from game.traffic import Car,make_car
 from game.river import River,RIVER_TOP,RIVER_H
 from game.highscores import load_scores,save_scores,add_score
+from game.daynight import phase,draw_night,draw_headlights
 
 LANES=8
 WIDTH=LANES*LANE_W
@@ -38,6 +39,9 @@ class GameEngine:
         self.game_over=False
         self.won=False
         self.score_rank=None  # where this run's score landed in the table (None = not in top 5)
+        self.cycle_start=pygame.time.get_ticks()  # day/night clock restarts (in daylight) with every new run
+        self.night=False
+        self.darkness=0.0  # 0 = full day, 1 = full night
 
     def handle_events(self):
         for event in pygame.event.get():
@@ -47,6 +51,8 @@ class GameEngine:
 
     def update(self):
         if self.game_over or self.won: return
+        # day/night follows real elapsed milliseconds, so it doesn't depend on the frame rate
+        self.night,self.darkness=phase(pygame.time.get_ticks()-self.cycle_start)
         keys=pygame.key.get_pressed()
         self.player.move(keys,0,WIDTH)
         self.timer+=1
@@ -119,8 +125,11 @@ class GameEngine:
         for c in self.cars: c.draw(self.screen)
         self.river.draw(self.screen)  # drawn over the cars: they pass underneath it
         # blink the player while invulnerable after a hit
-        if self.invuln==0 or (self.invuln//6)%2==0:
+        show_player=self.invuln==0 or (self.invuln//6)%2==0
+        if show_player:
             self.player.draw(self.screen)
+        if self.darkness>0:
+            self._draw_night(show_player)
         hud=pygame.Rect(0,0,WIDTH,30)
         pygame.draw.rect(self.screen,(20,20,20),hud)
         s=self.font.render(f"Score: {self.score//10}  GOAL: top!  R=Restart",True,(220,220,220))
@@ -134,6 +143,17 @@ class GameEngine:
         if self.game_over or self.won:
             self._draw_scores()
         pygame.display.flip()
+
+    def _draw_night(self,show_player):
+        draw_night(self.screen,self.darkness)
+        # cars run underneath the river, so keep their lights out of the river band
+        for area in (pygame.Rect(0,0,WIDTH,RIVER_TOP),pygame.Rect(0,RIVER_TOP+RIVER_H,WIDTH,HEIGHT)):
+            self.screen.set_clip(area)
+            for c in self.cars:
+                draw_headlights(self.screen,c.rect,c.direction,self.darkness)
+        self.screen.set_clip(None)
+        if show_player:
+            draw_headlights(self.screen,self.player.rect,-1,self.darkness)  # the player drives up the screen
 
     def _msg(self,text,color):
         ov=pygame.Surface((WIDTH,HEIGHT),pygame.SRCALPHA)
