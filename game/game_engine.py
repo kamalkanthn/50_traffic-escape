@@ -3,6 +3,7 @@ import random
 from game.player import Player,LANE_W
 from game.traffic import Car,make_car
 from game.river import River,RIVER_TOP,RIVER_H
+from game.highscores import load_scores,save_scores,add_score
 
 LANES=8
 WIDTH=LANES*LANE_W
@@ -20,6 +21,7 @@ class GameEngine:
         self.clock=pygame.time.Clock()
         self.font=pygame.font.SysFont("monospace",24,bold=True)
         self.big_font=pygame.font.SysFont("monospace",44,bold=True)
+        self.high_scores=load_scores()  # loaded once at start-up; survives R restarts
         self.reset()
 
     def reset(self):
@@ -35,6 +37,7 @@ class GameEngine:
         self.score=0
         self.game_over=False
         self.won=False
+        self.score_rank=None  # where this run's score landed in the table (None = not in top 5)
 
     def handle_events(self):
         for event in pygame.event.get():
@@ -64,6 +67,8 @@ class GameEngine:
         if self.score%300==0: self.speed=min(10,self.speed+0.5)
         if self.player.rect.top<=10:
             self.won=True
+        if self.game_over or self.won:
+            self.finish_run()
 
     def car_hits_player(self,c):
         # cars run underneath the river, so overlap that lies inside the river band doesn't count
@@ -94,6 +99,12 @@ class GameEngine:
             self.player.respawn(*self.start_pos)
             self.invuln=INVULN_FRAMES
 
+    def finish_run(self):
+        # runs exactly once per run: update() returns early on every frame after game_over / won
+        self.high_scores,self.score_rank=add_score(self.high_scores,self.score//10)
+        if self.score_rank is not None:
+            save_scores(self.high_scores)
+
     def draw(self):
         self.screen.fill(BG)
         # road markings
@@ -120,6 +131,8 @@ class GameEngine:
             self._msg("CRASHED!",(220,60,60))
         if self.won:
             self._msg("YOU MADE IT!",(80,220,80))
+        if self.game_over or self.won:
+            self._draw_scores()
         pygame.display.flip()
 
     def _msg(self,text,color):
@@ -130,6 +143,24 @@ class GameEngine:
         sub=self.font.render("Press R to Restart",True,(200,200,200))
         self.screen.blit(m,(WIDTH//2-m.get_width()//2,HEIGHT//2-40))
         self.screen.blit(sub,(WIDTH//2-sub.get_width()//2,HEIGHT//2+20))
+
+    def _draw_scores(self):
+        panel=pygame.Surface((360,228),pygame.SRCALPHA)  # dark backing so the table is easy to read
+        pygame.draw.rect(panel,(0,0,0,170),panel.get_rect(),border_radius=12)
+        self.screen.blit(panel,(WIDTH//2-180,348))
+        def line(text,y,color):
+            t=self.font.render(text,True,color)
+            self.screen.blit(t,(WIDTH//2-t.get_width()//2,y))
+        line(f"Final score: {self.score//10}",356,(220,220,220))
+        line("HIGH SCORES",396,(240,200,60))
+        for i,sc in enumerate(self.high_scores):
+            mine=(i==self.score_rank)
+            color=(80,220,80) if mine else (200,200,200)
+            t=self.font.render(f"{i+1}. {sc:>6}",True,color)
+            x=WIDTH//2-t.get_width()//2
+            y=428+i*28
+            self.screen.blit(t,(x,y))
+            if mine: self.screen.blit(self.font.render("<- you",True,color),(x+t.get_width()+12,y))
 
     def run(self):
         running=True
